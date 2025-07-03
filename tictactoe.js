@@ -43,80 +43,71 @@ function applyMove(state, idx) {
 
 /* UI */
 let fileHandle = null;
-let gameState = { board: Array(9).fill(''), turn: 'X' };
-const cells = Array.from(document.querySelectorAll('#board td'));
+let gameState  = { board: Array(9).fill(''), turn: 'X' };
+const cells         = Array.from(document.querySelectorAll('#board td'));
 const controlButton = document.getElementById('controlButton');
 
-// render board & win highlights
+// render board & highlight win
 function render() {
-  cells.forEach((cell,i) => {
-    cell.textContent = gameState.board[i] || '';
-    cell.classList.toggle('win', false);
+  cells.forEach((c,i) => {
+    c.textContent = gameState.board[i]||'';
+    c.classList.remove('win');
   });
-  const result = checkWin(gameState.board);
-  if (result) {
-    result.combo.forEach(i => cells[i].classList.add('win'));
-    controlButton.disabled = true;
+  const res = checkWin(gameState.board);
+  if (res) {
+    res.combo.forEach(i=>cells[i].classList.add('win'));
   }
 }
 
-// load JSON state from file
+// read from JSON file
 async function loadState() {
-  if (!fileHandle) return;
-  const file = await fileHandle.getFile();
-  const txt = await file.text();
-  gameState = JSON.parse(txt);
+  const f = await fileHandle.getFile();
+  gameState = JSON.parse(await f.text());
   render();
 }
 
-// write JSON state to file
+// write to JSON file
 async function saveState() {
-  if (!fileHandle) return;
-  const writable = await fileHandle.createWritable();
-  await writable.write(JSON.stringify(gameState, null, 2));
-  await writable.close();
+  const w = await fileHandle.createWritable();
+  await w.write(JSON.stringify(gameState, null, 2));
+  await w.close();
 }
 
-// ask user to pick or create the gamestate.json
-async function initFile() {
-  [fileHandle] = await window.showOpenFilePicker({
-    types: [{
-      description: 'TicTacToe JSON',
-      accept: { 'application/json': ['.json'] }
-    }],
-    multiple: false
-  }).catch(async () => {
-    // on cancel, create new
-    fileHandle = await window.showSaveFilePicker({
-      suggestedName: 'gamestate.json',
-      types: [{
-        description: 'TicTacToe JSON',
-        accept: { 'application/json': ['.json'] }
-      }]
-    });
-    // initialize with default
-    await saveState();
-  });
-  await loadState();
-}
-
-// handle a user click on a cell
-cells.forEach(cell => cell.addEventListener('click', async () => {
-  const idx = +cell.dataset.cell;
-  if (checkWin(gameState.board)) return;
-  gameState = applyMove(gameState, idx);
-  await saveState();
-  await loadState();
-}));
-
-// Start/Clear button to reset game
+// first‐click on “Start” will init file; subsequent will reset game
 controlButton.addEventListener('click', async () => {
+  // 1) if we don’t yet have a file handle, grab one now
+  if (!fileHandle) {
+    try {
+      [fileHandle] = await window.showOpenFilePicker({
+        types: [{ description: 'TicTacToe JSON', accept: { 'application/json': ['.json'] } }],
+        multiple: false
+      });
+    } catch {
+      fileHandle = await window.showSaveFilePicker({
+        suggestedName: 'gamestate.json',
+        types: [{ description: 'TicTacToe JSON', accept: { 'application/json': ['.json'] } }]
+      });
+      await saveState();  // write default
+    }
+    await loadState();
+    controlButton.textContent = 'Reset';
+    return;
+  }
+
+  // 2) if file is open, this click is a “Reset”
   gameState = { board: Array(9).fill(''), turn: 'X' };
   await saveState();
   await loadState();
 });
 
-// on page load, open or create the JSON file
-window.addEventListener('DOMContentLoaded', () => {
-  initFile();
+// only allow clicks *after* the file is open
+cells.forEach(cell => {
+  cell.addEventListener('click', async () => {
+    if (!fileHandle) return;                // guard
+    const idx = +cell.dataset.cell;
+    if (checkWin(gameState.board)) return;  // no moves after win
+    gameState = applyMove(gameState, idx);
+    await saveState();
+    await loadState();
+  });
 });
